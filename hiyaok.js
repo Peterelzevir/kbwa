@@ -24,6 +24,10 @@ const path = require('path');
 const { exec } = require('child_process');
 const { promisify } = require('util');
 const config = require('./config.js');
+const crypto = require('crypto'); // Import 
+
+// Pastikan crypto tersedia secara global (memperbaiki masalah baileys)
+global.crypto = crypto;
 
 // Membuat interface untuk input dari terminal
 const rl = readline.createInterface({
