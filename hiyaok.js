@@ -40,6 +40,9 @@ let database = {
   adminNumbers: config.adminNumbers
 };
 
+// Flag untuk menandai proses pairing sedang berlangsung
+let isPairingInProgress = false;
+
 /**
  * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  * ❰❰ FUNGSI DATABASE ❱❱
@@ -257,30 +260,45 @@ async function connectToWhatsApp() {
     if (connection === 'open') {
       console.log(`✅ Koneksi berhasil! Bot ${config.botName} aktif.`);
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      isPairingInProgress = false; // Reset pairing flag saat koneksi berhasil
     } else if (connection === 'close') {
       const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
-      console.log('❌ Koneksi tertutup karena ', lastDisconnect?.error, ', menghubungkan kembali: ', shouldReconnect);
       
-      if (shouldReconnect) {
+      if (shouldReconnect && !isPairingInProgress) {
+        console.log('❌ Koneksi tertutup, mencoba menghubungkan kembali...');
         connectToWhatsApp();
+      } else if (!shouldReconnect) {
+        console.log('❌ Koneksi tertutup, logout terdeteksi. Bot tidak akan mencoba menghubungkan kembali.');
+        process.exit(0);
       }
     }
     
-    // Jika tidak ada sesi tersimpan, minta nomor telepon untuk pairing
-    if (connection === 'connecting' && !state.creds.me) {
+    // Cek jika tidak ada sesi tersimpan dan bukan sedang pairing
+    if (connection === 'connecting' && !state.creds.me && !isPairingInProgress) {
+      isPairingInProgress = true; // Set flag untuk menghindari multiple pairing requests
+      
+      console.log('📱 Tidak ada sesi tersimpan. Memulai pairing...');
+      
       rl.question('Masukkan nomor telepon (format: 628xxx): ', async (phoneNumber) => {
         console.log(`⏳ Menunggu pairing code untuk ${phoneNumber}...`);
         
         try {
+          // Tunggu 3 detik sebelum request pairing code
           setTimeout(async () => {
-            await sock.requestPairingCode(phoneNumber);
+            try {
+              const pairingCode = await sock.requestPairingCode(phoneNumber);
+              console.log(`📲 Pairing code: ${pairingCode}`);
+              console.log('📲 Masukkan kode ini di aplikasi WhatsApp Anda > Perangkat tertaut > Tautkan perangkat');
+            } catch (pairingError) {
+              console.error('❌ Error saat meminta pairing code:', pairingError);
+              isPairingInProgress = false;
+              process.exit(1);
+            }
           }, 3000);
-          
-          rl.question('Masukkan pairing code: ', (code) => {
-            console.log(`🔄 Menggunakan pairing code: ${code}`);
-          });
         } catch (error) {
-          console.error('❌ Error saat meminta pairing code:', error);
+          console.error('❌ Error global:', error);
+          isPairingInProgress = false;
+          process.exit(1);
         }
       });
     }
